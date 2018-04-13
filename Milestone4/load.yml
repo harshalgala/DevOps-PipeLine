@@ -1,0 +1,52 @@
+---
+- hosts: localhost
+  name: configuration play
+  user: ubuntu
+  gather_facts: yes
+  
+  vars:
+    ansible_user_id: ubuntu
+
+  tasks: 
+    - name: LoadPolling Tool Cloning
+      git: 
+        repo: https://github.com/harshalgala/Loadpoller
+        dest: /home/{{ansible_user_id}}/Loadpoller
+        accept_hostkey: yes
+        force: yes
+
+    - name: Installing NodeJS
+      become: yes
+      apt: 
+        name: nodejs 
+        state: latest
+        
+    - name: Symlink to Node js
+      become: yes
+      file: 
+        src: /usr/bin/nodejs
+        dest: /usr/bin/node
+        state: link
+    
+    - name: Installing npm
+      become: yes
+      apt: 
+        name: npm
+        state: latest
+
+    - name: "Install forever to start Nodejs"
+      become: yes
+      npm: name=forever global=yes state=present
+
+    - name: Running NPM install
+      npm:
+        path: /home/{{ansible_user_id}}/Loadpoller
+
+    - name: "Display of list of nodejs apps running"
+      command: forever list
+      register: forever_list
+      changed_when: false
+
+    - name: "Start example Node.js app."
+      command: forever start /home/{{ansible_user_id}}/Loadpoller/loadbalancer.js
+      when: "forever_list.stdout.find('/home/{{ansible_user_id}}/Loadpoller/loadbalancer.js') == -1"

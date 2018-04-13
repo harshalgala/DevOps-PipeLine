@@ -1,0 +1,294 @@
+---
+- name: Create AWS instance
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  remote_user: ubuntu
+ 
+  vars:
+    region: us-west-2
+    instance_type: t2.micro
+    ami: ami-6e1a0117
+    project_name: new4
+    env: new4
+
+  tasks:
+    - name: Create security group
+      ec2_group:
+        name: "{{ project_name }}_security_group"
+        description: "{{ project_name }} security group"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp  # ssh
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp  # http
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp  # https
+            from_port: 443
+            to_port: 443
+            cidr_ip: 0.0.0.0/0
+        rules_egress:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+      register: test_firewall
+
+    - name: Create an EC2 key
+      ec2_key:
+        name: "{{ project_name }}-{{ env }}-key"
+        region: "{{ region }}"
+      register: ec2_key
+
+    - name: Save private key
+      copy: content="{{ ec2_key.key.private_key }}" dest="/tmp/aws-private_checkbox1.pem" mode=0600 owner=jenkins group=jenkins
+      when: ec2_key.changed
+
+    - name: Create an EC2 instance
+      ec2:
+        key_name: "{{ project_name }}-{{ env }}-key"
+        region: "{{ region }}"
+        group_id: "{{ test_firewall.group_id }}"
+        instance_type: "{{ instance_type }}"
+        image: "{{ ami }}"
+        wait: yes
+        count: 1
+        vpc_subnet_id: subnet-c7d1738e
+        assign_public_ip: yes
+      register: ec2
+
+    - name: Add all instance public IPs to host group
+      add_host: hostname={{ item.public_ip }} groupname=ec2hosts ansible_ssh_user=ubuntu ansible_ssh_private_key_file="/tmp/aws-private_checkbox1.pem"
+      with_items: "{{ ec2.instances }}"
+      
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 60
+        timeout: 320
+        state: started
+      with_items: "{{ ec2.instances }}"    
+          
+- hosts: ec2hosts
+  name: configuration play
+  user: ubuntu
+  gather_facts: false
+
+  tasks:
+  
+    - name: install python 2
+      raw: test -e /usr/bin/python || (sudo apt -y update && sudo apt install -y python-minimal)
+      
+    - name: gather_facts
+      setup:
+
+- hosts: ec2hosts
+  remote_user: ubuntu
+  gather_facts: yes
+  become: yes
+  become_method: sudo
+  environment:    
+        MONGO_PORT: 3002
+        MONGO_IP: localhost
+        MONGO_USER: mongoAdmin
+        MONGO_PASSWORD: password
+        MAIL_USER: noreplydevops53@gmail.com
+        MAIL_PASSWORD: Devops_0922
+        MAIL_SMTP: mock
+  
+  vars:
+     default_start_page: "root /home/ubuntu/checkbox.io/public_html/;"
+     my_ip: "192.168.38.68:3002;"
+     
+  tasks:
+   
+    - name: Installing Nodejs
+      apt: pkg={{ item }} state=present 
+      with_items:
+       - python-setuptools
+       - python-pip
+       - npm
+            
+    - name: Installing Nodejs 
+      apt: name=nodejs state=present
+      
+    - name: Symlink to Node js
+      file: 
+       src: /usr/bin/nodejs
+       dest: /usr/bin/node
+       state: link
+
+    - name: Installing nginx
+      apt: pkg=nginx state=installed 
+
+    - name: Add Mongo packages repo
+      apt_key: id=EA312927  keyserver=keyserver.ubuntu.com
+   
+    - name: Add Mongo packages repo
+      apt_key: id=EA312927  keyserver=keyserver.ubuntu.com
+      
+    - name: 
+      file: path=checkbox.io state=directory
+       
+    - name: Clone checkbox repository
+      git: >
+        repo=https://github.com/chrisparnin/checkbox.io.git
+        dest=checkbox.io
+        accept_hostkey=yes
+
+    # - name: Run npm install
+    #   npm: 
+    #     path: /tmp/checkbox.io/checkbox.io/server-side/site
+        
+    - name: Installing Dotenv
+      npm: name=dotenv global=yes
+
+    - name: add repo itself
+      apt_repository: repo='deb http://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.2 multiverse' state=present
+      
+    - name: install mongodb
+      apt: pkg=mongodb-org state=present force=yes #update_cache=yes
+
+    # Install dependencies for Mongo
+    - name: Install latest pymongo package
+      pip: name=pymongo state=latest use_mirrors=no
+
+    - name : Start mongodb
+      service: 
+       name: mongod
+       state: started
+          
+    # - mongodb_user:
+    #     name: admin
+    #     database: admin
+    #     password: admin
+    #     roles: readWrite,dbAdmin,userAdmin
+    #     state: present
+    
+    # set env variables
+    - name: Set mongo user
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MONGO_USER=mongoAdmin" 
+        state: present
+
+    - name: Set mongo password
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MONGO_PASSWORD=password" 
+        state: present
+
+    - name: Set mongo ip
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MONGO_IP=127.0.0.1" 
+        state: present
+
+    - name: Set mongo port
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MONGO_PORT=27017" 
+        state: present
+
+    - name: Set MAIL_USER
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MAIL_USER=noreplydevops53@gmail.com" 
+        state: present
+    
+    - name: Set MAIL_PASSWORD
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MAIL_PASSWORD=Devops_0922" 
+        state: present
+
+    - name: Set MAIL_SMTP
+      lineinfile: 
+        path: "/root/.bashrc"
+        insertafter: EOF
+        line: "export MAIL_SMTP=mock" 
+        state: present
+        
+    - name: edit nginx
+      lineinfile: 
+        dest: "checkbox.io/local-conf/nginx.conf"
+        regexp: '^       server '
+        line: "       server {{my_ip}}" 
+        state: present    
+  
+    - name: edit nginx
+      lineinfile: 
+        path: "checkbox.io/local-conf/default"
+        regexp: '^  root '
+        line: "  {{default_start_page}} " 
+        state: present
+
+    #configure nginx
+    
+    - name: update nginx.conf
+      copy:  
+        src: "checkbox.io/local-conf/nginx.conf"
+        dest: "/etc/nginx/nginx.conf"
+        remote_src: yes
+
+    - name: Update default conf file
+      copy:
+        src: "checkbox.io/local-conf/default"
+        dest: "/etc/nginx/sites-available/default"
+        remote_src: yes
+      #become: yes  
+
+    - name: Restart nginx
+      service: name=nginx state=restarted
+
+    #wait for localhost
+    
+    
+
+    #Configure mongo
+    - name: Add MongoDB user
+      mongodb_user:
+        database: admin
+        name: mongoAdmin
+        password: password
+        roles: readWrite,dbAdmin,userAdmin
+        state: present
+        
+
+    - name: Enable secure authentication for MongoDB
+      blockinfile:
+        dest: "/etc/mongod.conf"
+        content:
+          "security:\n  authorization: disabled"
+
+    - name: Restart mongodb
+      service: name=mongod state=restarted
+
+    # Install dependencies for node and start server
+    - name: "Install forever to start Nodejs"
+      npm: name=forever global=yes state=present
+
+    - name: "Install nodejs dependencies"
+      npm:
+        path: "checkbox.io/server-side/site"
+
+    - name: "Display of list of nodejs apps running"
+      command: forever list
+      register: forever_list
+      changed_when: false
+    
+    - name: "Start sample nodejsapp"
+      command: forever start -o output.log -e error.log server.js
+      args:
+        chdir: checkbox.io/server-side/site/
+      when: "forever_list.stdout.find('checkbox.io/server-side/site/server.js')== -1"
+      

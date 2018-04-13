@@ -1,0 +1,19 @@
+---
+- hosts: localhost
+  gather_facts: yes
+
+  tasks: 
+
+    - name: Delete node from loadbalancers list
+      lineinfile:
+        path: /etc/haproxy/haproxy.cfg
+        state: absent
+        regexp: '^  server {{ deletehostip }}'
+      notify: 
+        - restart haproxy
+      become: yes  
+      
+  handlers:
+    - name: restart haproxy
+      service: name=haproxy state=restarted
+      become: yes

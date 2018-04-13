@@ -1,0 +1,12 @@
+---
+- hosts: localhost
+  remote_user: root
+  become: yes
+  become_method: sudo
+
+  tasks:
+    - name: Running Fuzzer Jar
+      shell: java -jar /tmp/tools/fuzzer-with-dependencies.jar 100
+
+    - name: Running Useless Test Detector Jar
+      shell: java -jar /tmp/tools/useless-test-detector.jar

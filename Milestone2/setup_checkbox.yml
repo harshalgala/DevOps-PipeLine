@@ -1,0 +1,34 @@
+---
+    - name: Check if Checkbox job exists
+      shell: java -jar /tmp/jenkins-cli.jar -s  http://localhost:8080/ list-jobs
+      register: job_checkboxio
+      changed_when: "job_checkboxio.stdout.find('checkboxio') == -1"
+
+    - name: Copy Checkboxio project config.xml 
+      copy:
+        src: "/home/vagrant/DevOps_MileStone2/checkboxio_config.xml"
+        dest: "{{ checkboxio_config_xml }}"
+        mode: 0664
+      when: "job_checkboxio.stdout.find('checkboxio') == -1"
+
+    - name: Create directory for Analysis tool 
+      file: 
+       path: "/var/lib/jenkins/analysis"
+       state: directory
+       mode: 0775      
+
+    - name: Copy Analysis Directory 
+      copy:
+        src: "/home/vagrant/DevOps_MileStone2/analysis/"
+        dest: "/var/lib/jenkins/analysis/"
+        directory_mode: yes
+      when: "job_checkboxio.stdout.find('checkboxio') == -1"
+      
+    - name: Create job for Checkbox project 
+      shell: java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ create-job {{ build_job_checkboxio }} < {{ checkboxio_config_xml }}
+      when: "job_checkboxio.stdout.find('checkboxio') == -1"
+       
+    - name: Build newly created job for Checkboxio project 
+      command: java -jar /tmp/jenkins-cli.jar -s http://localhost:8080/ build {{ build_job_checkboxio }}
+      when: "job_checkboxio.stdout.find('checkboxio') == -1"
+
